@@ -132,24 +132,25 @@ function performSearch(keyword) {
 // 显示消息弹窗
 function showMessagePopup(mesId) {
     const context = getContext();
-    const message = context.chat[mesId];
+    const chat = context.chat;
     
-    if (!message) {
-        console.error("未找到消息ID:", mesId);
+    if (mesId < 0 || mesId >= chat.length) {
+        toastr.error("无效的消息ID", "消息导航");
         return;
     }
     
+    const message = chat[mesId];
+    
     const popupHtml = `
-        <div class="jump-to-floor-container">
-            <div class="message-header">
-                <strong>${message.name || "Unknown"}</strong> (楼层 #${mesId})
-            </div>
-            <div class="message-content" id="full-message-container">
-                ${message.mes}
-            </div>
-            <div class="popup-buttons">
-                <button id="jump-to-message">跳转到此消息</button>
-                <button id="close-popup">关闭</button>
+        <div class="message-popup-container">
+            <h3 class="message-header">
+                <span class="message-author">${message.name || "Unknown"}</span>
+                <span class="message-id">楼层: ${mesId}</span>
+            </h3>
+            <div class="message-content left-aligned">${message.mes}</div>
+            <div class="message-actions">
+                <button id="jump-to-message" class="popup-button">跳转到消息</button>
+                <button id="close-popup" class="popup-button secondary">关闭</button>
             </div>
         </div>
     `;
@@ -167,25 +168,64 @@ function showMessagePopup(mesId) {
     });
 }
 
+
 // 滚动到指定消息
 function scrollToMessage(mesId) {
+    // 确保消息ID是数字
+    mesId = parseInt(mesId);
+    if (isNaN(mesId)) return;
+    
+    // 尝试找到消息元素
     const messageElement = $(`.mes[mesid="${mesId}"]`);
+    
     if (messageElement.length) {
-        $('html, body').animate({
-            scrollTop: messageElement.offset().top - 100
-        }, 500);
-        
-        // 添加闪烁高亮效果
-        messageElement.addClass('flash-highlight');
-        setTimeout(() => {
-            messageElement.removeClass('flash-highlight');
-        }, 2000);
+        // 消息元素存在，滚动到该元素
+        // 使用更可靠的滚动方法组合
+        try {
+            // 先使用jQuery动画滚动到元素位置
+            $('html, body').animate({
+                scrollTop: messageElement.offset().top - (window.innerHeight / 3)
+            }, 500, function() {
+                // 然后使用原生方法确保元素完全可见
+                messageElement[0].scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'center' 
+                });
+                
+                // 添加闪烁高亮效果
+                messageElement.addClass("flash-highlight");
+                setTimeout(() => {
+                    messageElement.removeClass("flash-highlight");
+                }, 2000);
+            });
+        } catch (error) {
+            console.error("滚动到消息时出错:", error);
+            
+            // 备用滚动方法
+            try {
+                // 只使用传统滚动
+                const scrollPosition = messageElement.offset().top - 100;
+                window.scrollTo({
+                    top: scrollPosition,
+                    behavior: 'smooth'
+                });
+                
+                // 仍然添加高亮效果
+                messageElement.addClass("flash-highlight");
+                setTimeout(() => {
+                    messageElement.removeClass("flash-highlight");
+                }, 2000);
+            } catch (fallbackError) {
+                console.error("备用滚动方法也失败:", fallbackError);
+                toastr.error("无法滚动到指定消息", "消息导航");
+            }
+        }
     } else {
-        // 消息不在当前视图中，尝试加载
-        console.log("消息不在当前视图中，需要加载更多历史消息");
-        // 这里可以添加加载更多历史消息的逻辑
+        // ... existing code for handling messages not in view ...
     }
 }
+
+// ... existing code ...
 
 // 滚动到最早的已加载消息
 function scrollToFirstLoadedMessage() {
