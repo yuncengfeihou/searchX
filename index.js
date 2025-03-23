@@ -1,392 +1,403 @@
-import { extension_settings, getContext } from "../../../extensions.js";
-import { saveSettingsDebounced, eventSource, event_types } from "../../../../script.js";
-import { Popup, POPUP_TYPE } from '../../../popup.js';
-
-// 插件名称和默认设置
-const extensionName = "message-navigator";
-const defaultSettings = {
-    realTimeRendering: true,  // 默认启用实时渲染
-    highlightKeywords: true,  // 默认启用关键词高亮
-    caseSensitive: false      // 默认不区分大小写
-};
-
-// 加载插件设置
-function loadSettings() {
-    extension_settings[extensionName] = extension_settings[extensionName] || {};
-    if (Object.keys(extension_settings[extensionName]).length === 0) {
-        Object.assign(extension_settings[extensionName], defaultSettings);
-    }
-    updateSearchButtonText();
+/* 主面板样式 */
+#message-navigator {
+    position: fixed;
+    left: 10px;
+    top: 120px;
+    width: 300px;
+    background-color: #292932 !important; /* 深灰蓝色背景 */
+    color: #e8e8e8 !important;
+    border-radius: 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+    overflow: hidden;
+    border: 1px solid #3d3d47 !important;
 }
 
-// 更新搜索按钮文本
-function updateSearchButtonText() {
-    const realTimeRendering = extension_settings[extensionName].realTimeRendering;
-    $("#search-button").text(realTimeRendering ? "[清空]" : "[搜索]");
+/* 面板头部 */
+.panel-header {
+    padding: 10px 15px;
+    border-bottom: 1px solid #444;
+    background-color: #383838 !important;
+    border-radius: 10px 10px 0 0;
 }
 
-// 创建插件 UI
-function createUI() {
-    const settingsHtml = `
-        <div id="message-navigator">
-            <div class="panel-header">
-                <h3>消息检索导航器</h3>
-            </div>
-            <div class="keyword-search-area">
-                <div class="search-input-container">
-                    <input type="text" id="keyword-search" placeholder="输入关键词搜索">
-                    <button id="search-button">[搜索]</button>
-                </div>
-                <div id="search-results"></div>
-            </div>
-            <div class="quick-scroll-area">
-                <button id="scroll-up">↑ 最早</button>
-                <button id="jump-to-floor">跳转</button>
-                <button id="scroll-down">↓ 最新</button>
-            </div>
-            <div class="panel-footer">
-                <button id="advanced-settings">设置</button>
-            </div>
-        </div>
-    `;
-    
-    // 添加到页面
-    $("body").append(settingsHtml);
+.panel-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #e0e0e0 !important;
 }
 
-// 搜索消息
-function searchMessages(keyword) {
-    if (!keyword) return [];
-    
-    const context = getContext();
-    const chat = context.chat;
-    const caseSensitive = extension_settings[extensionName].caseSensitive;
-    
-    // 准备搜索关键词
-    const searchTerm = caseSensitive ? keyword : keyword.toLowerCase();
-    
-    // 搜索结果
-    const results = [];
-    
-    chat.forEach((message, index) => {
-        const messageText = caseSensitive ? message.mes : message.mes.toLowerCase();
-        if (messageText.includes(searchTerm)) {
-            // 提取匹配上下文
-            let startPos = messageText.indexOf(searchTerm);
-            let previewStart = Math.max(0, startPos - 20);
-            let previewEnd = Math.min(messageText.length, startPos + searchTerm.length + 20);
-            let preview = message.mes.substring(previewStart, previewEnd);
-            
-            // 如果不是从头开始，添加省略号
-            if (previewStart > 0) preview = "..." + preview;
-            if (previewEnd < message.mes.length) preview = preview + "...";
-            
-            results.push({
-                mesId: index,
-                name: message.name || "Unknown",
-                preview: preview,
-                fullText: message.mes
-            });
-        }
-    });
-    
-    return results;
+/* 搜索区域 */
+.keyword-search-area {
+    padding: 10px;
+    border-bottom: 1px solid #444;
 }
 
-// 执行搜索并显示结果
-function performSearch(keyword) {
-    const results = searchMessages(keyword);
-    const resultsContainer = $("#search-results");
-    resultsContainer.empty();
-    
-    if (results.length > 0) {
-        results.forEach(result => {
-            let previewText = result.preview;
-            
-            // 如果启用了高亮，对关键词进行高亮处理
-            if (extension_settings[extensionName].highlightKeywords) {
-                const regex = extension_settings[extensionName].caseSensitive 
-                    ? new RegExp(keyword, 'g') 
-                    : new RegExp(keyword, 'gi');
-                previewText = previewText.replace(regex, match => `<span class="highlight">${match}</span>`);
-            }
-            
-            resultsContainer.append(`
-                <div class="search-result" data-mesid="${result.mesId}">
-                    <div class="result-name">${result.name}</div>
-                    <div class="result-preview">${previewText}</div>
-                </div>
-            `);
-        });
-        
-        // 绑定点击事件
-        $(".search-result").on("click", function() {
-            const mesId = $(this).data("mesid");
-            showMessagePopup(mesId);
-        });
-    } else {
-        resultsContainer.html("<div class='no-results'>未找到匹配的消息</div>");
-    }
+.search-input-container {
+    display: flex;
+    margin-bottom: 10px;
 }
 
-// 显示消息弹窗
-function showMessagePopup(mesId) {
-    const context = getContext();
-    const chat = context.chat;
-    
-    if (mesId < 0 || mesId >= chat.length) {
-        toastr.error("无效的消息ID", "消息导航");
-        return;
-    }
-    
-    const message = chat[mesId];
-    
-    const popupHtml = `
-        <div class="message-popup-container">
-            <h3 class="message-header">
-                <span class="message-author">${message.name || "Unknown"}</span>
-                <span class="message-id">楼层: ${mesId}</span>
-            </h3>
-            <div class="message-content left-aligned">${message.mes}</div>
-            <div class="message-actions">
-                <button id="jump-to-message" class="popup-button">跳转到消息</button>
-                <button id="close-popup" class="popup-button secondary">关闭</button>
-            </div>
-        </div>
-    `;
-    
-    const popup = new Popup(popupHtml, POPUP_TYPE.TEXT);
-    popup.show();
-    
-    $("#jump-to-message").on("click", function() {
-        scrollToMessage(mesId);
-        popup.close();
-    });
-    
-    $("#close-popup").on("click", function() {
-        popup.close();
-    });
+#keyword-search {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #555;
+    border-radius: 4px 0 0 4px;
+    background-color: #333 !important;
+    color: #e0e0e0 !important;
+    outline: none;
 }
 
-// 跳转到消息的函数
-function scrollToMessage(mesId) {
-    const chat = getContext().chat;
-    
-    // 检查消息是否存在
-    if (!chat || mesId < 0 || mesId >= chat.length) {
-        toastr.error("无效的消息ID");
-        return;
-    }
-    
-    // 检查消息是否已加载到DOM中
-    const messageElement = document.querySelector(`[mesid="${mesId}"]`);
-    if (!messageElement) {
-        toastr.error("该楼层未加载，无法跳转");
-        return;
-    }
-    
-    // 滚动到消息位置
-    messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    
-    // 高亮显示消息
-    highlightMessage(messageElement);
+#search-button {
+    padding: 8px 12px;
+    border: 1px solid #555;
+    border-left: none;
+    border-radius: 0 4px 4px 0;
+    background-color: #444 !important;
+    color: #e0e0e0 !important;
+    cursor: pointer;
+    transition: background-color 0.2s;
 }
 
-// 高亮显示消息的函数
-function highlightMessage(element) {
-    if (!element) return;
-    
-    // 添加高亮类
-    element.classList.add('navigator-highlight');
-    
-    // 2秒后移除高亮效果
-    setTimeout(() => {
-        element.classList.remove('navigator-highlight');
-    }, 2000);
+#search-button:hover {
+    background-color: #555 !important;
 }
 
-// 滚动到最早的已加载消息
-function scrollToFirstLoadedMessage() {
-    const loadedMessages = $("#chat .mes");
-    if (loadedMessages.length > 0) {
-        const firstMesId = parseInt(loadedMessages.first().attr("mesid"));
-        scrollToMessage(firstMesId);
-    }
+/* 搜索结果区域 */
+#search-results {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-top: 10px;
 }
 
-// 滚动到最后一条消息
-function scrollToLastMessage() {
-    const loadedMessages = $("#chat .mes");
-    if (loadedMessages.length > 0) {
-        const lastMesId = parseInt(loadedMessages.last().attr("mesid"));
-        scrollToMessage(lastMesId);
-    }
+/* 搜索结果项 - 添加红色分隔线 */
+.search-result-item {
+    padding: 8px;
+    margin-bottom: 5px;
+    background-color: #333 !important;
+    border-radius: 4px;
+    cursor: pointer;
+    border-bottom: 2px solid #ff3333 !important; /* 红色分隔线 */
 }
 
-// 显示跳转到楼层弹窗
-function showJumpToFloorPopup(defaultMesId = "") {
-    const context = getContext();
-    const totalMessages = context.chat.length;
-    
-    const popupHtml = `
-        <div class="jump-to-floor-container">
-            <p>当前共有 ${totalMessages} 条消息</p>
-            <div>
-                <label for="floor-number">输入楼层号 (0-${totalMessages - 1}):</label>
-                <input type="number" id="floor-number" min="0" max="${totalMessages - 1}" value="${defaultMesId}">
-            </div>
-            <div class="popup-buttons">
-                <button id="confirm-jump">确认跳转</button>
-                <button id="cancel-jump">取消</button>
-            </div>
-        </div>
-    `;
-    
-    const popup = new Popup(popupHtml, POPUP_TYPE.TEXT);
-    popup.show();
-    
-    $("#confirm-jump").on("click", function() {
-        const floorNumber = parseInt($("#floor-number").val());
-        if (!isNaN(floorNumber) && floorNumber >= 0 && floorNumber < totalMessages) {
-            scrollToMessage(floorNumber);
-            popup.close();
-        } else {
-            alert("请输入有效的楼层号!");
-        }
-    });
-    
-    $("#cancel-jump").on("click", function() {
-        popup.close();
-    });
+.search-result-item:last-child {
+    border-bottom: none !important;
 }
 
-// 显示高级设置弹窗
-function showAdvancedSettingsPopup() {
-    const realTimeChecked = extension_settings[extensionName].realTimeRendering ? "checked" : "";
-    const highlightChecked = extension_settings[extensionName].highlightKeywords ? "checked" : "";
-    const caseSensitiveChecked = extension_settings[extensionName].caseSensitive ? "checked" : "";
-    
-    const popupHtml = `
-        <div class="settings-container">
-            <h3>消息检索设置</h3>
-            <div class="setting-item">
-                <label>
-                    <input type="checkbox" id="real-time-rendering" ${realTimeChecked}>
-                    实时搜索
-                </label>
-                <small>输入时自动搜索，关闭后需点击搜索按钮</small>
-            </div>
-            <div class="setting-item">
-                <label>
-                    <input type="checkbox" id="highlight-keywords" ${highlightChecked}>
-                    关键词高亮
-                </label>
-                <small>在搜索结果中高亮显示匹配的关键词</small>
-            </div>
-            <div class="setting-item">
-                <label>
-                    <input type="checkbox" id="case-sensitive" ${caseSensitiveChecked}>
-                    区分大小写
-                </label>
-                <small>搜索时区分大小写</small>
-            </div>
-            <div class="popup-buttons">
-                <button id="save-settings">保存设置</button>
-                <button id="cancel-settings">取消</button>
-            </div>
-        </div>
-    `;
-    
-    const popup = new Popup(popupHtml, POPUP_TYPE.TEXT);
-    popup.show();
-    
-    $("#save-settings").on("click", function() {
-        extension_settings[extensionName].realTimeRendering = $("#real-time-rendering").prop("checked");
-        extension_settings[extensionName].highlightKeywords = $("#highlight-keywords").prop("checked");
-        extension_settings[extensionName].caseSensitive = $("#case-sensitive").prop("checked");
-        
-        saveSettingsDebounced();
-        updateSearchButtonText();
-        popup.close();
-        
-        // 如果有搜索关键词，重新执行搜索以应用新设置
-        const keyword = $("#keyword-search").val();
-        if (keyword) {
-            performSearch(keyword);
-        }
-    });
-    
-    $("#cancel-settings").on("click", function() {
-        popup.close();
-    });
+/* 结果头部 */
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+    font-size: 12px;
 }
 
-// 处理关键词输入
-function handleKeywordInput() {
-    const keyword = $("#keyword-search").val();
-    
-    if (extension_settings[extensionName].realTimeRendering) {
-        if (keyword) {
-            performSearch(keyword);
-        } else {
-            $("#search-results").empty();
-        }
-    }
+/* 角色颜色区分 */
+.user-message .result-author {
+    color: #4285f4 !important; /* 用户消息蓝色 */
+    font-weight: bold;
 }
 
-// 处理搜索按钮点击
-function handleSearchButtonClick() {
-    if (extension_settings[extensionName].realTimeRendering) {
-        // 清空模式
-        $("#keyword-search").val("");
-        $("#search-results").empty();
-    } else {
-        // 搜索模式
-        const keyword = $("#keyword-search").val();
-        if (keyword) {
-            performSearch(keyword);
-        }
-    }
+.assistant-message .result-author {
+    color: #ff9800 !important; /* 助手消息橙色 */
+    font-weight: bold;
 }
 
-// 绑定事件
-function bindEvents() {
-    // 导航按钮
-    $("#scroll-up").on("click", scrollToFirstLoadedMessage);
-    $("#scroll-down").on("click", scrollToLastMessage);
-    $("#jump-to-floor").on("click", () => showJumpToFloorPopup());
-    
-    // 搜索相关
-    $("#search-button").on("click", handleSearchButtonClick);
-    $("#keyword-search").on("input", handleKeywordInput);
-    $("#keyword-search").on("keypress", function(e) {
-        if (e.which === 13 && !extension_settings[extensionName].realTimeRendering) {
-            handleSearchButtonClick();
-        }
-    });
-    
-    // 设置按钮
-    $("#advanced-settings").on("click", showAdvancedSettingsPopup);
-    
-    // 监听新消息事件，更新搜索结果
-    eventSource.on(event_types.MESSAGE_RECEIVED, () => {
-        const keyword = $("#keyword-search").val();
-        if (extension_settings[extensionName].realTimeRendering && keyword) {
-            performSearch(keyword);
-        }
-    });
+.result-id {
+    color: #888 !important;
 }
 
-// 初始化插件
-jQuery(async () => {
-    // 创建UI
-    createUI();
-    
-    // 加载设置
-    loadSettings();
-    
-    // 绑定事件
-    bindEvents();
-    
-    console.log("消息检索导航器插件已加载");
-});
+/* 结果预览 */
+.result-preview {
+    font-size: 13px;
+    margin-bottom: 8px;
+    white-space: normal;
+    word-break: break-word;
+    color: #ccc !important;
+}
+
+/* 结果操作按钮 */
+.result-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.result-action {
+    padding: 4px 8px;
+    font-size: 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: #555 !important;
+    color: #fff !important;
+    transition: background-color 0.2s;
+}
+
+.result-action:hover {
+    background-color: #666 !important;
+}
+
+/* 快速滚动区域 */
+.quick-scroll-area {
+    display: flex;
+    padding: 10px;
+    gap: 8px;
+    border-bottom: 1px solid #444;
+}
+
+.quick-scroll-area button {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 4px;
+    background-color: #444 !important;
+    color: #e0e0e0 !important;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.quick-scroll-area button:hover {
+    background-color: #555 !important;
+}
+
+/* 面板底部 */
+.panel-footer {
+    padding: 10px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+#advanced-settings {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    background-color: #444 !important;
+    color: #e0e0e0 !important;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#advanced-settings:hover {
+    background-color: #555 !important;
+}
+
+/* 设置弹窗样式 */
+.advanced-settings-popup {
+    padding: 10px;
+    color: #e0e0e0 !important;
+}
+
+.setting-item {
+    margin-bottom: 15px;
+}
+
+.setting-item label {
+    display: flex;
+    align-items: center;
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: #e0e0e0 !important;
+}
+
+.setting-item input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+.setting-description {
+    font-size: 12px;
+    color: #aaa !important;
+    margin-left: 24px;
+}
+
+/* 无结果提示 */
+.no-results {
+    padding: 10px;
+    text-align: center;
+    color: #888 !important;
+    font-style: italic;
+}
+
+/* 关键词高亮 */
+.keyword-highlight {
+    background-color: rgba(255, 255, 0, 0.3) !important;
+    color: #fff !important;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+/* 消息闪烁高亮效果 */
+@keyframes flash-highlight {
+    0% { background-color: rgba(255, 255, 0, 0.2); }
+    50% { background-color: rgba(255, 255, 0, 0.5); }
+    100% { background-color: transparent; }
+}
+
+.flash-highlight {
+    animation: flash-highlight 2s ease;
+}
+
+/* 消息内容左对齐样式 */
+.left-aligned {
+    text-align: left !important;
+    white-space: pre-wrap;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 15px;
+    background-color: #2d2d2d !important;
+    color: #e0e0e0 !important;
+    border-radius: 5px;
+    margin: 10px 0;
+    line-height: 1.5;
+}
+
+/* 确保消息弹窗有合适的大小和样式 */
+.message-popup-container {
+    max-width: 90vw;
+    width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.message-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #444;
+}
+
+.message-author {
+    font-weight: bold;
+    color: #4285f4 !important;
+}
+
+.message-id {
+    font-size: 0.9em;
+    color: #888 !important;
+}
+
+.message-actions {
+    display: flex;
+    justify-content: center; /* 居中对齐按钮 */
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.message-action-button {
+    padding: 8px 15px;
+    background-color: #1a73e8 !important;
+    color: white !important;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.message-action-button:hover {
+    background-color: #1558b3 !important;
+}
+
+/* 全局样式重置 - 确保插件样式不受SillyTaven影响 */
+#message-navigator,
+#message-navigator * {
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+}
+
+/* 主面板样式 - 更现代化的设计 */
+#message-navigator {
+    position: fixed;
+    left: 10px;
+    top: 120px;
+    width: 300px;
+    background-color: #292932 !important; /* 深灰蓝色背景 */
+    color: #e8e8e8 !important;
+    border-radius: 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+    overflow: hidden;
+    border: 1px solid #3d3d47 !important;
+}
+
+/* 面板标题栏 */
+.navigator-header {
+    background: linear-gradient(90deg, #2b2b38 0%, #323245 100%) !important;
+    color: #ffffff !important;
+    padding: 12px 15px;
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #3d3d47 !important;
+}
+
+/* 搜索框容器 */
+.search-container {
+    display: flex;
+    padding: 12px;
+    gap: 8px;
+    align-items: center;
+    background-color: #2d2d3a !important;
+    border-bottom: 1px solid #3d3d47 !important;
+}
+
+/* 搜索输入框 */
+#search-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #3d3d47 !important;
+    border-radius: 6px;
+    background-color: #383845 !important;
+    color: #e8e8e8 !important;
+    font-size: 14px;
+    max-width: 60%;
+    transition: all 0.2s;
+}
+
+#search-input:focus {
+    outline: none;
+    border-color: #5165d7 !important;
+    box-shadow: 0 0 0 2px rgba(81, 101, 215, 0.2);
+}
+
+/* 搜索按钮 */
+.search-button {
+    padding: 8px 12px;
+    background-color: #5165d7 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.search-button:hover {
+    background-color: #4255c7 !important;
+    transform: translateY(-1px);
+}
+
+.search-button:active {
+    transform: translateY(1px);
+}
+
+/* 突出显示当前消息 */
+.navigator-highlight {
+    animation: highlightAnimation 2s;
+}
+
+@keyframes highlightAnimation {
+    0% { background-color: rgba(81, 101, 215, 0.3) !important; }
+    100% { background-color: transparent !important; }
+}
