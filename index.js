@@ -175,14 +175,15 @@ function scrollToMessage(mesId) {
     
     // 检查消息是否存在
     if (!chat || mesId < 0 || mesId >= chat.length) {
-        toastr.error("无效的消息ID");
+        toastr.error("无效的消息ID", "消息导航");
         return;
     }
     
     // 检查消息是否已加载到DOM中
-    const messageElement = document.querySelector(`[mesid="${mesId}"]`);
+    const messageElement = document.querySelector(`.mes[mesid="${mesId}"]`);
     if (!messageElement) {
-        toastr.error("该楼层未加载，无法跳转");
+        // 显示错误提示
+        toastr.error("该楼层未加载，无法跳转", "消息导航");
         return;
     }
     
