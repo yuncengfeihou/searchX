@@ -76,10 +76,11 @@
 
 /* 搜索结果项 - 添加红色分隔线 */
 .search-result-item {
-    padding: 10px;
-    margin-bottom: 10px;
-    background-color: #333;
+    padding: 8px;
+    margin-bottom: 5px;
+    background-color: #333 !important;
     border-radius: 4px;
+    cursor: pointer;
     border-bottom: 2px solid #ff3333 !important; /* 红色分隔线 */
 }
 
@@ -186,43 +187,12 @@
 
 /* 设置弹窗样式 */
 .advanced-settings-popup {
-    padding: 20px;
-    max-width: 500px;
-}
-
-.advanced-settings-popup h3 {
-    margin-top: 0;
-    margin-bottom: 15px;
-    color: #fff;
-    text-align: center;
-}
-
-.advanced-settings-popup input {
-    width: 100%;
     padding: 10px;
-    margin-bottom: 15px;
-    border: 1px solid #444;
-    border-radius: 4px;
-    background-color: #333;
-    color: #fff;
+    color: #e0e0e0 !important;
 }
 
-.popup-buttons {
-    display: flex;
-    justify-content: center;
-    margin-top: 20px;
-}
-
-/* 设置项样式 */
 .setting-item {
     margin-bottom: 15px;
-    border-bottom: 1px solid #444;
-    padding-bottom: 15px;
-}
-
-.setting-item:last-child {
-    border-bottom: none;
-    margin-bottom: 0;
 }
 
 .setting-item label {
@@ -230,18 +200,17 @@
     align-items: center;
     font-weight: bold;
     margin-bottom: 5px;
-    color: #fff;
+    color: #e0e0e0 !important;
 }
 
 .setting-item input[type="checkbox"] {
-    margin-right: 10px;
-    width: auto;
+    margin-right: 8px;
 }
 
 .setting-description {
-    margin: 5px 0 0 25px;
-    font-size: 0.9em;
-    color: #aaa;
+    font-size: 12px;
+    color: #aaa !important;
+    margin-left: 24px;
 }
 
 /* 无结果提示 */
@@ -255,7 +224,7 @@
 /* 关键词高亮 */
 .keyword-highlight {
     background-color: rgba(255, 255, 0, 0.3) !important;
-    font-weight: bold;
+    color: #fff !important;
     padding: 0 2px;
     border-radius: 2px;
 }
@@ -332,33 +301,4 @@
 
 .message-action-button:hover {
     background-color: #1558b3 !important;
-}
-
-/* 弹窗样式修复 */
-.jump-floor-popup, .advanced-settings-popup {
-    padding: 20px;
-    max-width: 500px;
-}
-
-.jump-floor-popup h3, .advanced-settings-popup h3 {
-    margin-top: 0;
-    margin-bottom: 15px;
-    color: #fff;
-    text-align: center;
-}
-
-.jump-floor-popup input, .advanced-settings-popup input {
-    width: 100%;
-    padding: 10px;
-    margin-bottom: 15px;
-    border: 1px solid #444;
-    border-radius: 4px;
-    background-color: #333;
-    color: #fff;
-}
-
-.popup-buttons {
-    display: flex;
-    justify-content: center;
-    margin-top: 20px;
 }
