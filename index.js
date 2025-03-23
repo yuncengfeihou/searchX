@@ -1,6 +1,7 @@
 import { extension_settings, getContext } from "../../../extensions.js";
 import { saveSettingsDebounced, eventSource, event_types } from "../../../../script.js";
 import { Popup, POPUP_TYPE } from '../../../popup.js';
+import { callPopup } from "../../../../script.js";
 
 // 插件名称和默认设置
 const extensionName = "消息导航增强X1.0";
@@ -55,7 +56,22 @@ function createUI() {
 
 // 显示跳转楼层弹窗
 function showJumpToFloorPopup() {
-    callPopup("<input type='number' id='floor-number' placeholder='输入楼层号'><br><button id='confirm-floor' class='menu_button'>确认</button>", 'text');
+    const popupHtml = `
+        <div class="jump-floor-popup">
+            <h3>跳转到指定楼层</h3>
+            <input type="number" id="floor-number" placeholder="输入楼层号" min="0">
+            <div class="popup-buttons">
+                <button id="confirm-floor" class="menu_button">确认</button>
+            </div>
+        </div>
+    `;
+    
+    const popup = new Popup({
+        title: '跳转到楼层',
+        content: popupHtml,
+        type: POPUP_TYPE.CUSTOM,
+    });
+    popup.show();
     
     $('#confirm-floor').on('click', function() {
         const floorNumber = parseInt($('#floor-number').val());
@@ -64,61 +80,60 @@ function showJumpToFloorPopup() {
             if (!success) {
                 toastr.error("该楼层未加载，无法跳转");
             }
-            $('#dialogue_popup').hide();
+            popup.hide();
         }
     });
 }
 
-// 显示高级设置弹窗 - 移除取消按钮
+// 显示高级设置弹窗
 function showAdvancedSettingsPopup() {
-    const popup = new Popup({
-        title: '高级搜索设置',
-        content: `
-            <div class="advanced-settings-popup">
-                <div class="setting-item">
-                    <label>
-                        <input type="checkbox" id="realtime-rendering" 
-                               ${extension_settings[extensionName].realTimeRendering ? 'checked' : ''}>
-                        实时渲染搜索结果
-                    </label>
-                    <div class="setting-description">输入关键词时自动更新搜索结果</div>
-                </div>
-                
-                <div class="setting-item">
-                    <label>
-                        <input type="checkbox" id="highlight-keywords" 
-                               ${extension_settings[extensionName].highlightKeywords ? 'checked' : ''}>
-                        关键词提亮
-                    </label>
-                    <div class="setting-description">在聊天记录中高亮显示匹配的关键词</div>
-                </div>
-                
-                <div class="setting-item">
-                    <label>
-                        <input type="checkbox" id="case-sensitive" 
-                               ${extension_settings[extensionName].caseSensitive ? 'checked' : ''}>
-                        区分大小写
-                    </label>
-                    <div class="setting-description">搜索时区分大小写</div>
-                </div>
+    const settingsHtml = `
+        <div class="advanced-settings-popup">
+            <h3>高级检索设置</h3>
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="setting-real-time" ${extension_settings[extensionName].realTimeRendering ? 'checked' : ''}>
+                    实时渲染搜索结果
+                </label>
+                <p class="setting-description">启用后，输入关键词时会实时显示搜索结果</p>
             </div>
-        `,
-        buttons: [
-            {
-                text: '保存设置',
-                callback: () => {
-                    extension_settings[extensionName].realTimeRendering = $('#realtime-rendering').is(':checked');
-                    extension_settings[extensionName].highlightKeywords = $('#highlight-keywords').is(':checked');
-                    extension_settings[extensionName].caseSensitive = $('#case-sensitive').is(':checked');
-                    
-                    saveSettingsDebounced();
-                    updateSearchButtonText();
-                    toastr.success('已保存当前设置！');
-                }
-            }
-        ],
-        type: POPUP_TYPE.CONTENT,
-        zIndex: 9999
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="setting-highlight" ${extension_settings[extensionName].highlightKeywords ? 'checked' : ''}>
+                    关键词提亮
+                </label>
+                <p class="setting-description">启用后，将高亮显示搜索结果中的关键词</p>
+            </div>
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="setting-case-sensitive" ${extension_settings[extensionName].caseSensitive ? 'checked' : ''}>
+                    区分大小写
+                </label>
+                <p class="setting-description">启用后，搜索时将区分大小写</p>
+            </div>
+            <div class="popup-buttons">
+                <button id="save-settings" class="menu_button">保存设置</button>
+            </div>
+        </div>
+    `;
+    
+    const popup = new Popup({
+        title: '高级设置',
+        content: settingsHtml,
+        type: POPUP_TYPE.CUSTOM,
+    });
+    popup.show();
+    
+    $('#save-settings').on('click', function() {
+        extension_settings[extensionName].realTimeRendering = $('#setting-real-time').is(':checked');
+        extension_settings[extensionName].highlightKeywords = $('#setting-highlight').is(':checked');
+        extension_settings[extensionName].caseSensitive = $('#setting-case-sensitive').is(':checked');
+        
+        saveSettingsDebounced();
+        updateSearchButtonText();
+        
+        toastr.success('已保存当前设置！');
+        popup.hide();
     });
 }
 
@@ -128,7 +143,7 @@ function scrollToFirstLoadedMessage() {
     if (firstMessage) {
         firstMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else {
-        toastr.error("无法找到消息");
+        toastr.error("没有找到任何消息");
     }
 }
 
@@ -138,7 +153,7 @@ function scrollToLastMessage() {
     if (lastMessage) {
         lastMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else {
-        toastr.error("无法找到消息");
+        toastr.error("没有找到任何消息");
     }
 }
 
@@ -148,7 +163,17 @@ async function scrollToMessage(messageId) {
         const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
         
         if (!messageElement) {
-            // 如果消息不存在
+            const context = getContext();
+            const totalMessages = context.chat.length;
+            
+            // 检查消息ID是否在有效范围内
+            if (messageId < 0 || messageId >= totalMessages) {
+                toastr.error("无效的消息ID，无法跳转");
+                return false;
+            }
+            
+            // 如果消息未加载，显示错误提示
+            toastr.error("该楼层未加载，无法跳转");
             return false;
         }
         
@@ -156,14 +181,18 @@ async function scrollToMessage(messageId) {
         messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         
         // 添加高亮效果
-        messageElement.classList.add('flash-highlight');
+        messageElement.style.transition = "background-color 0.5s";
+        messageElement.style.backgroundColor = "rgba(255, 255, 0, 0.2)";
+        
+        // 2秒后移除高亮
         setTimeout(() => {
-            messageElement.classList.remove('flash-highlight');
+            messageElement.style.backgroundColor = "";
         }, 2000);
         
         return true;
     } catch (error) {
-        console.error("跳转到消息时出错:", error);
+        console.error("滚动到消息时出错:", error);
+        toastr.error("跳转过程中出错");
         return false;
     }
 }
