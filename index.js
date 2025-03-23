@@ -168,64 +168,42 @@ function showMessagePopup(mesId) {
     });
 }
 
-
-// 滚动到指定消息
+// 跳转到消息的函数
 function scrollToMessage(mesId) {
-    // 确保消息ID是数字
-    mesId = parseInt(mesId);
-    if (isNaN(mesId)) return;
+    const chat = getContext().chat;
     
-    // 尝试找到消息元素
-    const messageElement = $(`.mes[mesid="${mesId}"]`);
-    
-    if (messageElement.length) {
-        // 消息元素存在，滚动到该元素
-        // 使用更可靠的滚动方法组合
-        try {
-            // 先使用jQuery动画滚动到元素位置
-            $('html, body').animate({
-                scrollTop: messageElement.offset().top - (window.innerHeight / 3)
-            }, 500, function() {
-                // 然后使用原生方法确保元素完全可见
-                messageElement[0].scrollIntoView({ 
-                    behavior: 'smooth', 
-                    block: 'center' 
-                });
-                
-                // 添加闪烁高亮效果
-                messageElement.addClass("flash-highlight");
-                setTimeout(() => {
-                    messageElement.removeClass("flash-highlight");
-                }, 2000);
-            });
-        } catch (error) {
-            console.error("滚动到消息时出错:", error);
-            
-            // 备用滚动方法
-            try {
-                // 只使用传统滚动
-                const scrollPosition = messageElement.offset().top - 100;
-                window.scrollTo({
-                    top: scrollPosition,
-                    behavior: 'smooth'
-                });
-                
-                // 仍然添加高亮效果
-                messageElement.addClass("flash-highlight");
-                setTimeout(() => {
-                    messageElement.removeClass("flash-highlight");
-                }, 2000);
-            } catch (fallbackError) {
-                console.error("备用滚动方法也失败:", fallbackError);
-                toastr.error("无法滚动到指定消息", "消息导航");
-            }
-        }
-    } else {
-        // ... existing code for handling messages not in view ...
+    // 检查消息是否存在
+    if (!chat || mesId < 0 || mesId >= chat.length) {
+        toastr.error("无效的消息ID");
+        return;
     }
+    
+    // 检查消息是否已加载到DOM中
+    const messageElement = document.querySelector(`[mesid="${mesId}"]`);
+    if (!messageElement) {
+        toastr.error("该楼层未加载，无法跳转");
+        return;
+    }
+    
+    // 滚动到消息位置
+    messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // 高亮显示消息
+    highlightMessage(messageElement);
 }
 
-// ... existing code ...
+// 高亮显示消息的函数
+function highlightMessage(element) {
+    if (!element) return;
+    
+    // 添加高亮类
+    element.classList.add('navigator-highlight');
+    
+    // 2秒后移除高亮效果
+    setTimeout(() => {
+        element.classList.remove('navigator-highlight');
+    }, 2000);
+}
 
 // 滚动到最早的已加载消息
 function scrollToFirstLoadedMessage() {
