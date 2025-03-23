@@ -168,18 +168,46 @@ function showMessagePopup(mesId) {
     });
 }
 
+// 添加错误提示函数
+function showErrorToast(message) {
+    // 移除任何现有的错误提示
+    const existingToasts = document.querySelectorAll('.error-toast');
+    existingToasts.forEach(toast => toast.remove());
+    
+    // 创建新的错误提示
+    const toast = document.createElement('div');
+    toast.className = 'error-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // 3秒后自动移除
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
 
-// 滚动到指定消息
-function scrollToMessage(mesId) {
+// 修改跳转到消息函数，添加错误处理
+async function scrollToMessage(messageId) {
     try {
-        const messageElement = document.querySelector(`.mes[mesid="${mesId}"]`);
+        const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
+        
         if (!messageElement) {
-            // 显示错误提示
+            // 尝试加载更多消息
+            const context = getContext();
+            const totalMessages = context.chat.length;
+            
+            // 检查消息ID是否在有效范围内
+            if (messageId < 0 || messageId >= totalMessages) {
+                showErrorToast("无效的消息ID，无法跳转");
+                return false;
+            }
+            
+            // 如果消息未加载，显示错误提示
             showErrorToast("该楼层未加载，无法跳转");
-            console.log(`无法找到mesId为${mesId}的消息元素`);
             return false;
         }
         
+        // 滚动到消息位置
         messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         
         // 添加高亮效果
@@ -191,22 +219,46 @@ function scrollToMessage(mesId) {
         return true;
     } catch (error) {
         console.error("跳转到消息时出错:", error);
-        showErrorToast("跳转失败，请稍后再试");
+        showErrorToast("跳转失败，请重试");
         return false;
     }
 }
 
-// 显示错误提示的函数
-function showErrorToast(message) {
-    const toast = document.createElement('div');
-    toast.className = 'error-toast';
-    toast.textContent = message;
-    document.body.appendChild(toast);
+// 修改消息内容显示函数，确保内容不溢出
+function showMessageContent(message) {
+    const messageContent = message.mes || "无内容";
+    const messageName = message.name || "未知";
+    const messageId = message.message_id !== undefined ? message.message_id : "未知";
     
-    // 3秒后自动移除
+    callPopup(`
+        <div class="message-popup-container">
+            <div class="message-popup-header">
+                <div class="message-author">${messageName}</div>
+                <div class="message-id">消息ID: ${messageId}</div>
+            </div>
+            <div class="message-popup-content">
+                <div class="left-aligned">${messageContent}</div>
+            </div>
+            <div class="message-actions">
+                <button class="message-action-button" id="jump-to-message">跳转到此消息</button>
+                <button class="message-action-button secondary" id="close-popup">关闭</button>
+            </div>
+        </div>
+    `, 'text');
+    
+    // 添加按钮事件监听
     setTimeout(() => {
-        toast.remove();
-    }, 3000);
+        document.getElementById('jump-to-message').addEventListener('click', () => {
+            const success = scrollToMessage(messageId);
+            if (success) {
+                closePopup();
+            }
+        });
+        
+        document.getElementById('close-popup').addEventListener('click', () => {
+            closePopup();
+        });
+    }, 100);
 }
 
 // 滚动到最早的已加载消息
@@ -394,63 +446,3 @@ jQuery(async () => {
     
     console.log("消息检索导航器插件已加载");
 });
-
-// 添加显示错误提示的函数
-function showErrorToast(message) {
-    // 移除已有的错误提示
-    $('.error-toast').remove();
-    
-    // 创建新的错误提示
-    const toast = $('<div class="error-toast"></div>').text(message);
-    $('body').append(toast);
-    
-    // 3秒后自动移除
-    setTimeout(() => {
-        toast.remove();
-    }, 3000);
-}
-
-// 修改跳转到指定消息ID的函数
-function navigateToMessage(messageId) {
-    // 检查消息是否存在
-    const context = getContext();
-    if (!context || !context.chat || messageId >= context.chat.length) {
-        showErrorToast("无效的消息ID");
-        return false;
-    }
-    
-    // 尝试查找消息元素
-    const messageElement = $(`.mes[mesid="${messageId}"]`);
-    if (messageElement.length === 0) {
-        showErrorToast("该楼层未加载，无法跳转");
-        return false;
-    }
-    
-    // 滚动到消息位置
-    messageElement[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-    
-    // 添加高亮效果
-    messageElement.addClass('flash-highlight');
-    setTimeout(() => {
-        messageElement.removeClass('flash-highlight');
-    }, 2000);
-    
-    return true;
-}
-
-// 修改跳转到指定楼层的函数
-function jumpToFloor() {
-    const floorInput = $('#floor-input');
-    const floorNumber = parseInt(floorInput.val());
-    
-    if (isNaN(floorNumber) || floorNumber < 0) {
-        showErrorToast("请输入有效的楼层数字");
-        return;
-    }
-    
-    const success = navigateToMessage(floorNumber);
-    if (success) {
-        // 更新当前选中的消息
-        updateSelectedMessage(floorNumber);
-    }
-}
