@@ -3,7 +3,7 @@ import { saveSettingsDebounced, eventSource, event_types } from "../../../../scr
 import { Popup, POPUP_TYPE } from '../../../popup.js';
 
 // 插件名称和默认设置
-const extensionName = "message-navigator";
+const extensionName = "消息导航增强X1.0";
 const defaultSettings = {
     realTimeRendering: true,  // 默认启用实时渲染
     highlightKeywords: true,  // 默认启用关键词高亮
