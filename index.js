@@ -1,10 +1,9 @@
 import { extension_settings, getContext } from "../../../extensions.js";
 import { saveSettingsDebounced, eventSource, event_types } from "../../../../script.js";
 import { Popup, POPUP_TYPE } from '../../../popup.js';
-import { callPopup } from "../../../../script.js";
 
 // 插件名称和默认设置
-const extensionName = "消息导航增强X1.0";
+const extensionName = "message-navigator";
 const defaultSettings = {
     realTimeRendering: true,  // 默认启用实时渲染
     highlightKeywords: true,  // 默认启用关键词高亮
@@ -51,325 +50,324 @@ function createUI() {
         </div>
     `;
     
+    // 添加到页面
     $("body").append(settingsHtml);
 }
 
-// 显示跳转楼层弹窗
-function showJumpToFloorPopup() {
-    const popupHtml = `
-        <div class="jump-floor-popup">
-            <h3>跳转到指定楼层</h3>
-            <input type="number" id="floor-number" placeholder="输入楼层号" min="0">
-            <div class="popup-buttons">
-                <button id="confirm-floor" class="menu_button">确认</button>
-            </div>
-        </div>
-    `;
+// 搜索消息
+function searchMessages(keyword) {
+    if (!keyword) return [];
     
-    const popup = new Popup({
-        title: '跳转到楼层',
-        content: popupHtml,
-        type: POPUP_TYPE.CUSTOM,
-    });
-    popup.show();
+    const context = getContext();
+    const chat = context.chat;
+    const caseSensitive = extension_settings[extensionName].caseSensitive;
     
-    $('#confirm-floor').on('click', function() {
-        const floorNumber = parseInt($('#floor-number').val());
-        if (!isNaN(floorNumber)) {
-            const success = scrollToMessage(floorNumber);
-            if (!success) {
-                toastr.error("该楼层未加载，无法跳转");
-            }
-            popup.hide();
+    // 准备搜索关键词
+    const searchTerm = caseSensitive ? keyword : keyword.toLowerCase();
+    
+    // 搜索结果
+    const results = [];
+    
+    chat.forEach((message, index) => {
+        const messageText = caseSensitive ? message.mes : message.mes.toLowerCase();
+        if (messageText.includes(searchTerm)) {
+            // 提取匹配上下文
+            let startPos = messageText.indexOf(searchTerm);
+            let previewStart = Math.max(0, startPos - 20);
+            let previewEnd = Math.min(messageText.length, startPos + searchTerm.length + 20);
+            let preview = message.mes.substring(previewStart, previewEnd);
+            
+            // 如果不是从头开始，添加省略号
+            if (previewStart > 0) preview = "..." + preview;
+            if (previewEnd < message.mes.length) preview = preview + "...";
+            
+            results.push({
+                mesId: index,
+                name: message.name || "Unknown",
+                preview: preview,
+                fullText: message.mes
+            });
         }
     });
+    
+    return results;
 }
 
-// 显示高级设置弹窗
-function showAdvancedSettingsPopup() {
-    const settingsHtml = `
-        <div class="advanced-settings-popup">
-            <h3>高级检索设置</h3>
-            <div class="setting-item">
-                <label>
-                    <input type="checkbox" id="setting-real-time" ${extension_settings[extensionName].realTimeRendering ? 'checked' : ''}>
-                    实时渲染搜索结果
-                </label>
-                <p class="setting-description">启用后，输入关键词时会实时显示搜索结果</p>
-            </div>
-            <div class="setting-item">
-                <label>
-                    <input type="checkbox" id="setting-highlight" ${extension_settings[extensionName].highlightKeywords ? 'checked' : ''}>
-                    关键词提亮
-                </label>
-                <p class="setting-description">启用后，将高亮显示搜索结果中的关键词</p>
-            </div>
-            <div class="setting-item">
-                <label>
-                    <input type="checkbox" id="setting-case-sensitive" ${extension_settings[extensionName].caseSensitive ? 'checked' : ''}>
-                    区分大小写
-                </label>
-                <p class="setting-description">启用后，搜索时将区分大小写</p>
-            </div>
-            <div class="popup-buttons">
-                <button id="save-settings" class="menu_button">保存设置</button>
+// 执行搜索并显示结果
+function performSearch(keyword) {
+    const results = searchMessages(keyword);
+    const resultsContainer = $("#search-results");
+    resultsContainer.empty();
+    
+    if (results.length > 0) {
+        results.forEach(result => {
+            let previewText = result.preview;
+            
+            // 如果启用了高亮，对关键词进行高亮处理
+            if (extension_settings[extensionName].highlightKeywords) {
+                const regex = extension_settings[extensionName].caseSensitive 
+                    ? new RegExp(keyword, 'g') 
+                    : new RegExp(keyword, 'gi');
+                previewText = previewText.replace(regex, match => `<span class="highlight">${match}</span>`);
+            }
+            
+            resultsContainer.append(`
+                <div class="search-result" data-mesid="${result.mesId}">
+                    <div class="result-name">${result.name}</div>
+                    <div class="result-preview">${previewText}</div>
+                </div>
+            `);
+        });
+        
+        // 绑定点击事件
+        $(".search-result").on("click", function() {
+            const mesId = $(this).data("mesid");
+            showMessagePopup(mesId);
+        });
+    } else {
+        resultsContainer.html("<div class='no-results'>未找到匹配的消息</div>");
+    }
+}
+
+// 显示消息弹窗
+function showMessagePopup(mesId) {
+    const context = getContext();
+    const chat = context.chat;
+    
+    if (mesId < 0 || mesId >= chat.length) {
+        toastr.error("无效的消息ID", "消息导航");
+        return;
+    }
+    
+    const message = chat[mesId];
+    
+    const popupHtml = `
+        <div class="message-popup-container">
+            <h3 class="message-header">
+                <span class="message-author">${message.name || "Unknown"}</span>
+                <span class="message-id">楼层: ${mesId}</span>
+            </h3>
+            <div class="message-content left-aligned">${message.mes}</div>
+            <div class="message-actions">
+                <button id="jump-to-message" class="popup-button">跳转到消息</button>
+                <button id="close-popup" class="popup-button secondary">关闭</button>
             </div>
         </div>
     `;
     
-    const popup = new Popup({
-        title: '高级设置',
-        content: settingsHtml,
-        type: POPUP_TYPE.CUSTOM,
-    });
+    const popup = new Popup(popupHtml, POPUP_TYPE.TEXT);
     popup.show();
     
-    $('#save-settings').on('click', function() {
-        extension_settings[extensionName].realTimeRendering = $('#setting-real-time').is(':checked');
-        extension_settings[extensionName].highlightKeywords = $('#setting-highlight').is(':checked');
-        extension_settings[extensionName].caseSensitive = $('#setting-case-sensitive').is(':checked');
-        
-        saveSettingsDebounced();
-        updateSearchButtonText();
-        
-        toastr.success('已保存当前设置！');
-        popup.hide();
+    $("#jump-to-message").on("click", function() {
+        scrollToMessage(mesId);
+        popup.close();
+    });
+    
+    $("#close-popup").on("click", function() {
+        popup.close();
     });
 }
 
-// 滚动到第一条加载的消息
-function scrollToFirstLoadedMessage() {
-    const firstMessage = document.querySelector('.mes');
-    if (firstMessage) {
-        firstMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+// 滚动到指定消息
+function scrollToMessage(mesId) {
+    // 确保消息ID是数字
+    mesId = parseInt(mesId);
+    if (isNaN(mesId)) return;
+    
+    // 尝试找到消息元素
+    const messageElement = $(`.mes[mesid="${mesId}"]`);
+    
+    if (messageElement.length) {
+        // 消息元素存在，滚动到该元素
+        // 使用更可靠的滚动方法组合
+        try {
+            // 先使用jQuery动画滚动到元素位置
+            $('html, body').animate({
+                scrollTop: messageElement.offset().top - (window.innerHeight / 3)
+            }, 500, function() {
+                // 然后使用原生方法确保元素完全可见
+                messageElement[0].scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'center' 
+                });
+                
+                // 添加闪烁高亮效果
+                messageElement.addClass("flash-highlight");
+                setTimeout(() => {
+                    messageElement.removeClass("flash-highlight");
+                }, 2000);
+            });
+        } catch (error) {
+            console.error("滚动到消息时出错:", error);
+            
+            // 备用滚动方法
+            try {
+                // 只使用传统滚动
+                const scrollPosition = messageElement.offset().top - 100;
+                window.scrollTo({
+                    top: scrollPosition,
+                    behavior: 'smooth'
+                });
+                
+                // 仍然添加高亮效果
+                messageElement.addClass("flash-highlight");
+                setTimeout(() => {
+                    messageElement.removeClass("flash-highlight");
+                }, 2000);
+            } catch (fallbackError) {
+                console.error("备用滚动方法也失败:", fallbackError);
+                toastr.error("无法滚动到指定消息", "消息导航");
+            }
+        }
     } else {
-        toastr.error("没有找到任何消息");
+        // ... existing code for handling messages not in view ...
+    }
+}
+
+// ... existing code ...
+
+// 滚动到最早的已加载消息
+function scrollToFirstLoadedMessage() {
+    const loadedMessages = $("#chat .mes");
+    if (loadedMessages.length > 0) {
+        const firstMesId = parseInt(loadedMessages.first().attr("mesid"));
+        scrollToMessage(firstMesId);
     }
 }
 
 // 滚动到最后一条消息
 function scrollToLastMessage() {
-    const lastMessage = document.querySelector('.mes:last-child');
-    if (lastMessage) {
-        lastMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-        toastr.error("没有找到任何消息");
+    const loadedMessages = $("#chat .mes");
+    if (loadedMessages.length > 0) {
+        const lastMesId = parseInt(loadedMessages.last().attr("mesid"));
+        scrollToMessage(lastMesId);
     }
 }
 
-// 滚动到指定消息
-async function scrollToMessage(messageId) {
-    try {
-        const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
-        
-        if (!messageElement) {
-            const context = getContext();
-            const totalMessages = context.chat.length;
-            
-            // 检查消息ID是否在有效范围内
-            if (messageId < 0 || messageId >= totalMessages) {
-                toastr.error("无效的消息ID，无法跳转");
-                return false;
-            }
-            
-            // 如果消息未加载，显示错误提示
-            toastr.error("该楼层未加载，无法跳转");
-            return false;
-        }
-        
-        // 滚动到消息位置
-        messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        // 添加高亮效果
-        messageElement.style.transition = "background-color 0.5s";
-        messageElement.style.backgroundColor = "rgba(255, 255, 0, 0.2)";
-        
-        // 2秒后移除高亮
-        setTimeout(() => {
-            messageElement.style.backgroundColor = "";
-        }, 2000);
-        
-        return true;
-    } catch (error) {
-        console.error("滚动到消息时出错:", error);
-        toastr.error("跳转过程中出错");
-        return false;
-    }
-}
-
-// 获取消息预览文本
-function getPreviewText(text, maxLength = 100) {
-    if (!text) return "无内容";
+// 显示跳转到楼层弹窗
+function showJumpToFloorPopup(defaultMesId = "") {
+    const context = getContext();
+    const totalMessages = context.chat.length;
     
-    // 去除HTML标签获取纯文本
-    const plainText = text.replace(/<[^>]*>/g, "");
-    
-    if (plainText.length <= maxLength) return plainText;
-    return plainText.substring(0, maxLength) + "...";
-}
-
-// 显示消息内容 - 移除关闭按钮
-function showMessageContent(message) {
-    const messageContent = message.mes || "无内容";
-    const messageName = message.name || "未知";
-    const messageId = message.message_id !== undefined ? message.message_id : "未知";
-    
-    callPopup(`
-        <div class="message-popup-container">
-            <div class="message-header">
-                <span class="message-author">${messageName}</span>
-                <span class="message-id">消息ID: ${messageId}</span>
+    const popupHtml = `
+        <div class="jump-to-floor-container">
+            <p>当前共有 ${totalMessages} 条消息</p>
+            <div>
+                <label for="floor-number">输入楼层号 (0-${totalMessages - 1}):</label>
+                <input type="number" id="floor-number" min="0" max="${totalMessages - 1}" value="${defaultMesId}">
             </div>
-            <div class="message-content left-aligned">${messageContent}</div>
-            <div class="message-actions">
-                <button class="message-action-button" id="jump-to-message">跳转到此消息</button>
+            <div class="popup-buttons">
+                <button id="confirm-jump">确认跳转</button>
+                <button id="cancel-jump">取消</button>
             </div>
         </div>
-    `, 'text');
+    `;
     
-    $('#jump-to-message').on('click', function() {
-        const success = scrollToMessage(messageId);
-        if (!success) {
-            toastr.error("该楼层未加载，无法跳转");
+    const popup = new Popup(popupHtml, POPUP_TYPE.TEXT);
+    popup.show();
+    
+    $("#confirm-jump").on("click", function() {
+        const floorNumber = parseInt($("#floor-number").val());
+        if (!isNaN(floorNumber) && floorNumber >= 0 && floorNumber < totalMessages) {
+            scrollToMessage(floorNumber);
+            popup.close();
+        } else {
+            alert("请输入有效的楼层号!");
         }
-        $('#dialogue_popup').hide();
+    });
+    
+    $("#cancel-jump").on("click", function() {
+        popup.close();
     });
 }
 
-// 执行搜索
-function performSearch(keyword) {
-    if (!keyword) {
-        $("#search-results").empty();
-        return;
-    }
+// 显示高级设置弹窗
+function showAdvancedSettingsPopup() {
+    const realTimeChecked = extension_settings[extensionName].realTimeRendering ? "checked" : "";
+    const highlightChecked = extension_settings[extensionName].highlightKeywords ? "checked" : "";
+    const caseSensitiveChecked = extension_settings[extensionName].caseSensitive ? "checked" : "";
     
-    const caseSensitive = extension_settings[extensionName].caseSensitive;
-    const highlightKeywords = extension_settings[extensionName].highlightKeywords;
-    
-    // 创建用于搜索的正则表达式
-    const searchRegex = new RegExp(keyword, caseSensitive ? 'g' : 'gi');
-    
-    // 获取消息并搜索
-    const chat = getContext().chat;
-    const results = [];
-    
-    for (let i = 0; i < chat.length; i++) {
-        const message = chat[i];
-        if (!message.mes) continue;
-        
-        if (searchRegex.test(message.mes)) {
-            results.push({ message, index: i });
-            
-            // 如果启用了关键词高亮，对消息元素应用高亮效果
-            if (highlightKeywords) {
-                const messageElement = document.querySelector(`.mes[mesid="${i}"]`);
-                if (messageElement) {
-                    const messageText = messageElement.querySelector('.mes_text');
-                    if (messageText) {
-                        // 重置搜索正则表达式对象
-                        searchRegex.lastIndex = 0;
-                        
-                        // 创建高亮版本的消息内容
-                        const highlightedContent = message.mes.replace(
-                            searchRegex, 
-                            match => `<span class="keyword-highlight">${match}</span>`
-                        );
-                        
-                        // 更新消息文本内容
-                        messageText.innerHTML = highlightedContent;
-                    }
-                }
-            }
-        }
-    }
-    
-    displaySearchResults(results);
-    
-    return results;
-}
-
-// 显示搜索结果 - 添加分隔线和颜色区分
-function displaySearchResults(results) {
-    const resultsContainer = $("#search-results");
-    resultsContainer.empty();
-    
-    if (results.length === 0) {
-        resultsContainer.html('<div class="no-results">未找到匹配结果</div>');
-        return;
-    }
-    
-    results.forEach(result => {
-        const { message, index } = result;
-        // 确定角色类型
-        const isUser = message.is_user || message.name === getContext().name1;
-        const roleClass = isUser ? 'user-message' : 'assistant-message';
-        
-        const resultItem = $(`
-            <div class="search-result-item">
-                <div class="result-header ${roleClass}">
-                    <span class="result-author">${message.name}</span>
-                    <span class="result-id">ID: ${index}</span>
-                </div>
-                <div class="result-preview">${getPreviewText(message.mes, 80)}</div>
-                <div class="result-actions">
-                    <button class="result-action view-btn" data-index="${index}">查看</button>
-                    <button class="result-action jump-btn" data-index="${index}">跳转</button>
-                </div>
+    const popupHtml = `
+        <div class="settings-container">
+            <h3>消息检索设置</h3>
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="real-time-rendering" ${realTimeChecked}>
+                    实时搜索
+                </label>
+                <small>输入时自动搜索，关闭后需点击搜索按钮</small>
             </div>
-        `);
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="highlight-keywords" ${highlightChecked}>
+                    关键词高亮
+                </label>
+                <small>在搜索结果中高亮显示匹配的关键词</small>
+            </div>
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="case-sensitive" ${caseSensitiveChecked}>
+                    区分大小写
+                </label>
+                <small>搜索时区分大小写</small>
+            </div>
+            <div class="popup-buttons">
+                <button id="save-settings">保存设置</button>
+                <button id="cancel-settings">取消</button>
+            </div>
+        </div>
+    `;
+    
+    const popup = new Popup(popupHtml, POPUP_TYPE.TEXT);
+    popup.show();
+    
+    $("#save-settings").on("click", function() {
+        extension_settings[extensionName].realTimeRendering = $("#real-time-rendering").prop("checked");
+        extension_settings[extensionName].highlightKeywords = $("#highlight-keywords").prop("checked");
+        extension_settings[extensionName].caseSensitive = $("#case-sensitive").prop("checked");
         
-        resultsContainer.append(resultItem);
-    });
-    
-    // 绑定按钮事件
-    $(".result-action.view-btn").on("click", function() {
-        const index = $(this).data("index");
-        const message = getContext().chat[index];
-        showMessageContent(message);
-    });
-    
-    $(".result-action.jump-btn").on("click", function() {
-        const index = $(this).data("index");
-        const success = scrollToMessage(index);
-        if (!success) {
-            toastr.error("该楼层未加载，无法跳转");
+        saveSettingsDebounced();
+        updateSearchButtonText();
+        popup.close();
+        
+        // 如果有搜索关键词，重新执行搜索以应用新设置
+        const keyword = $("#keyword-search").val();
+        if (keyword) {
+            performSearch(keyword);
         }
     });
-}
-
-// 处理搜索按钮点击
-function handleSearchButtonClick() {
-    const keyword = $("#keyword-search").val();
-    const realTimeRendering = extension_settings[extensionName].realTimeRendering;
     
-    if (realTimeRendering || !keyword) {
-        // 清空搜索框和结果
-        $("#keyword-search").val("");
-        $("#search-results").empty();
-        
-        // 清除高亮
-        if (extension_settings[extensionName].highlightKeywords) {
-            const messageElements = document.querySelectorAll('.mes .mes_text');
-            messageElements.forEach(el => {
-                // 保存原始内容，移除高亮
-                const originalContent = el.getAttribute('data-original-content');
-                if (originalContent) {
-                    el.innerHTML = originalContent;
-                    el.removeAttribute('data-original-content');
-                }
-            });
-        }
-    } else {
-        // 非实时渲染模式下，点击按钮执行搜索
-        performSearch(keyword);
-    }
+    $("#cancel-settings").on("click", function() {
+        popup.close();
+    });
 }
 
 // 处理关键词输入
 function handleKeywordInput() {
     const keyword = $("#keyword-search").val();
-    if (extension_settings[extensionName].realTimeRendering && keyword) {
-        performSearch(keyword);
+    
+    if (extension_settings[extensionName].realTimeRendering) {
+        if (keyword) {
+            performSearch(keyword);
+        } else {
+            $("#search-results").empty();
+        }
+    }
+}
+
+// 处理搜索按钮点击
+function handleSearchButtonClick() {
+    if (extension_settings[extensionName].realTimeRendering) {
+        // 清空模式
+        $("#keyword-search").val("");
+        $("#search-results").empty();
+    } else {
+        // 搜索模式
+        const keyword = $("#keyword-search").val();
+        if (keyword) {
+            performSearch(keyword);
+        }
     }
 }
 
